@@ -5,6 +5,11 @@ class QuantumSystem:
     """
     Simulates a two-qubit superconducting system (gmon) using RWA Hamiltonian.
     Follows Eq. (1) from Niu et al. (2018).
+    
+    Units:
+    - Time: ns
+    - Frequency: rad/ns (internal)
+    - Inputs: MHz (controls) -> converted to rad/ns
     """
     def __init__(self, n_levels=3, dt=1.0):
         """
@@ -14,27 +19,14 @@ class QuantumSystem:
         """
         self.dims = n_levels
         self.dt = dt
-        
-        # Parameters (freq in GHz = 1000 MHz since time is ns? No, usually MHz and us. 
-        # Paper says: eta = -200 MHz. Energy gap Delta = 200 MHz.
-        # If we use MHz for frequency, time should be in microseconds (us).
-        # OR: w in rad/ns, then f in GHz.
-        # Let's check common conventions. 
-        # If eta = -200e6 Hz. t = 1e-9 s.
-        # w*t = 2pi*f*t. 
-        # Easier: Scale everything to angular freq in units of 1/ns.
-        # 1 MHz = 1e6 Hz = 1e-3 GHz = 1e-3 (1/ns).
-        # omega = 2 * pi * f.
-        # So 200 MHz = 0.2 GHz. 2pi * 0.2 rad/ns.
-        
-        # Let's stick to using MHz and microseconds? No, typical gate time 20-50 ns.
-        # Let's use internal units: Energies in (2*pi*GHz) i.e. rad/ns.
-        # 1 MHz = 0.001 GHz.
-        # 200 MHz -> f = 0.2 GHz. w = 2*pi*0.2 = 0.4*pi rad/ns.
-        # This keeps numbers around unity ~ 1.25.
-        
         self.two_pi = 2 * np.pi
-        self.eta_val = -0.200 * self.two_pi # -200 MHz converted to rad/ns
+        
+        # Base Parameters
+        # Anharmonicity eta = -200 MHz
+        self.eta_base = -200.0 
+        
+        # Current Parameters (can be modified by noise)
+        self.reset_parameters()
         
         # Operators
         self.a1 = qt.tensor(qt.destroy(n_levels), qt.qeye(n_levels))
@@ -43,26 +35,27 @@ class QuantumSystem:
         self.n1 = self.a1.dag() * self.a1
         self.n2 = self.a2.dag() * self.a2
         
-        # Drift Hamiltonian terms (Anharmonicity)
-        # term: (eta/2) * sum( nj(nj-1) )
-        self.H_drift = (self.eta_val / 2.0) * (
-            self.n1 * (self.n1 - 1) + self.n2 * (self.n2 - 1)
-        )
-        
-        # Coupling operators (g term)
-        self.H_g = self.a2.dag() * self.a1 + self.a1.dag() * self.a2
-        
-        # Drive operators
-        # term: i f_j ( a_j e^-iphi - a_j^dag e^iphi )
-        # We can decompose this:
-        # i f (a cos - ia sin - (adag cos + i adag sin))
-        # = i f ( (a - adag) cos - i(a + adag) sin )
-        # = f ( i(a - adag) cos + (a + adag) sin )
-        # = f ( y_op cos + x_op sin )
-        # where x_op = a + adag, y_op = i(a - adag) -- Wait, y = -i(a-adag).
-        # Let's just construct it numerically at each step to avoid expansion errors.
-        
         self.eye = qt.tensor(qt.qeye(n_levels), qt.qeye(n_levels))
+        
+        # Coupling operator component
+        self.op_coupling = self.a2.dag() * self.a1 + self.a1.dag() * self.a2
+
+    def reset_parameters(self):
+        """Resets parameters to base values."""
+        self.eta = self.eta_base * 1e-3 * self.two_pi # rad/ns
+        self.delta_offset = np.zeros(2) # Offsets for detuning noise
+    
+    def set_parameters(self, eta_val=None, delta_offsets=None):
+        """
+        Sets system parameters, useful for static noise injection.
+        Args:
+            eta_val (float): Anharmonicity in MHz.
+            delta_offsets (list): [delta1_off, delta2_off] in MHz.
+        """
+        if eta_val is not None:
+            self.eta = eta_val * 1e-3 * self.two_pi
+        if delta_offsets is not None:
+            self.delta_offset = np.array(delta_offsets) * 1e-3 * self.two_pi
 
     def get_hamiltonian(self, controls):
         """
@@ -71,39 +64,52 @@ class QuantumSystem:
         Args:
             controls (np.array): Shape (7,). 
                 [delta1, delta2, f1, phi1, f2, phi2, g_coupling]
-                Units: delta, f in MHz (converted to rad/ns inside), 
-                       g in MHz (converted), phi in radians.
+                Units: delta, f, g in MHz; phi in radians.
         
         Returns:
-            qt.Qobj: Hamiltonian at this instant.
+            qt.Qobj: Hamiltonian at this instant (in rad/ns).
         """
-        # Unpack and convert units to rad/ns
-        d1, d2, f1, phi1, f2, phi2, g_val = controls
+        # Unpack
+        d1_in, d2_in, f1_in, phi1, f2_in, phi2, g_in = controls
         
-        d1 = d1 * 1e-3 * self.two_pi # MHz -> rad/ns
-        d2 = d2 * 1e-3 * self.two_pi
-        f1 = f1 * 1e-3 * self.two_pi
-        f2 = f2 * 1e-3 * self.two_pi
-        g_val = g_val * 1e-3 * self.two_pi
+        # Convert to rad/ns
+        # Note: 1 MHz = 1e-3 GHz = 1e-3 * 2pi rad/ns
+        scale = 1e-3 * self.two_pi
+        
+        d1 = d1_in * scale + self.delta_offset[0]
+        d2 = d2_in * scale + self.delta_offset[1]
+        f1 = f1_in * scale
+        f2 = f2_in * scale
+        g_val = g_in * scale
+        
+        # H_drift (Anharmonicity) = (eta/2) * sum( nj(nj-1) )
+        H_drift = (self.eta / 2.0) * (
+            self.n1 * (self.n1 - 1) + self.n2 * (self.n2 - 1)
+        )
         
         # H_detuning = sum( delta_j * n_j )
         H_det = d1 * self.n1 + d2 * self.n2
         
         # H_coupling = g(t) * (a2+a1 + a1+a2)
-        H_c = g_val * self.H_g
+        H_c = g_val * self.op_coupling
         
         # H_drive = sum( i f_j (a_j e^-iphi - a_j^dag e^iphi) )
+        # term: i f (a e^-iphi - adag e^iphi)
+        H_d1 = 0
         if f1 != 0:
-            term1 = 1j * f1 * (self.a1 * np.exp(-1j * phi1) - self.a1.dag() * np.exp(1j * phi1))
-        else:
-            term1 = 0
+            exp_phi1 = np.exp(1j * phi1)
+            # i * f1 * (a1 * conj(exp_phi) - a1^dag * exp_phi)
+            # Note: np.exp(-1j * phi1) is conj(exp_phi)
+            term = self.a1 * np.conj(exp_phi1) - self.a1.dag() * exp_phi1
+            H_d1 = 1j * f1 * term
             
+        H_d2 = 0
         if f2 != 0:
-            term2 = 1j * f2 * (self.a2 * np.exp(-1j * phi2) - self.a2.dag() * np.exp(1j * phi2))
-        else:
-            term2 = 0
+            exp_phi2 = np.exp(1j * phi2)
+            term = self.a2 * np.conj(exp_phi2) - self.a2.dag() * exp_phi2
+            H_d2 = 1j * f2 * term
             
-        H = self.H_drift + H_det + H_c + term1 + term2
+        H = H_drift + H_det + H_c + H_d1 + H_d2
         return H
 
     def evolve_step(self, U, controls):
@@ -123,12 +129,7 @@ class QuantumSystem:
     @staticmethod
     def target_gate_cz():
         """Returns Target Unitary for CZ gate in computational subspace."""
-        # CZ = diag(1, 1, 1, -1)
-        # But we need to represent it in the full Hilbert space or project U down.
-        # Full dims = 3x3 = 9. Comp subspace = 2x2 = 4.
-        # Indices: 00->0, 01->1, 10->3, 11->4 (if standard ordering).
-        # Wrapper will handle subspace projection.
-        # Let's define the 4x4 target matrix.
+        # CZ = diag(1, 1, 1, -1) in basis |00>, |01>, |10>, |11>
         return np.diag([1, 1, 1, -1])
 
     def get_subspace_unitary(self, U):
@@ -165,18 +166,41 @@ class QuantumSystem:
         f = (1.0 / 16.0) * np.abs(tr)**2
         return f
 
-    def leakage_cost(self, H_od_norm, H_od_2nd_deriv_norm, T_total):
+    def h_off_diag_norm(self, controls):
         """
-        Approximates L_tot from Eq (3).
-        L_tot = ||H_od(0)||/Delta + ||H_od(T)||/Delta + integral(...)
-        Assuming we just calculate the integral part (Runge-Kutta or sum).
+        Calculates the norm of the off-diagonal terms of the Hamiltonian.
+        This roughly corresponds to the leakage-inducing terms.
         
-        For RL step-by-step, we might compute instantaneous cost.
-        But leakage bound is an integral over the whole path.
+        NOTE: This is a simplified evaluation of leakage potential. 
+        It will need to be changed with a higher order evaluation (TSWT) later, 
+        as described in Niu et al. (2018).
         """
-        # Placeholder for complex TSWT cost.
-        # We will simply return the instantaneous off-diagonal norm as proxy
-        # for "leakage potential" at this step, if we treat it as a dense reward.
-        # Or accumulate it.
-        return H_od_norm # Simplified
-
+        H = self.get_hamiltonian(controls)
+        
+        # We want to identify terms that couple computational subspace to non-computational.
+        # Ideally, we'd block-diagonalize or mask.
+        # Simple proxy: Just take the norm of elements connecting levels (0,1) to (2).
+        
+        # Mask for computational subspace
+        dim = self.dims
+        comp_indices = [0, 1] 
+        # For 2 qubits: 00, 01, 10, 11 are comp.
+        # But wait, leakage is leaving the logical subspace.
+        # Indices in full space:
+        # 0:|00>, 1:|01>, 2:|02> (leak), 3:|10>, 4:|11>, 5:|12> (leak), 6:|20> (leak)...
+        
+        comp_basis = [0, 1, 3, 4]
+        
+        # Create a mask for off-diagonal (coupling comp to non-comp)
+        H_np = H.full()
+        
+        loss_norm = 0.0
+        
+        # Iterate over computational rows
+        for r in comp_basis:
+            # Sum coupling to non-computational cols
+            for c in range(dim*dim):
+                if c not in comp_basis:
+                    loss_norm += np.abs(H_np[r, c])**2
+                    
+        return np.sqrt(loss_norm)

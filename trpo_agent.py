@@ -51,9 +51,9 @@ class PolicyNetwork(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(act_dim))
 
     def forward(self, x):
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
         mean = self.mean_layer(x)
         std = torch.exp(self.log_std)
         return mean, std
@@ -67,9 +67,9 @@ class ValueNetwork(nn.Module):
         self.val_layer = nn.Linear(32, 1)
 
     def forward(self, x):
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
         return self.val_layer(x)
 
 class TRPOAgent:
