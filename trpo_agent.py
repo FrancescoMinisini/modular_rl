@@ -48,8 +48,8 @@ class PolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 32)
         self.mean_layer = nn.Linear(32, act_dim)
-        # Initialize log_std to -6.0 (std ~ 0.002) for ultra-stable start
-        self.log_std = nn.Parameter(torch.ones(act_dim) * -6.0)
+        # Initialize log_std to -3.5 (std ~ 0.03) - Sweet spot for exploration/stability
+        self.log_std = nn.Parameter(torch.ones(act_dim) * -3.5)
         self._init_weights()
 
     def forward(self, x):
