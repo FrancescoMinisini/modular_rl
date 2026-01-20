@@ -48,7 +48,9 @@ class PolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 32)
         self.mean_layer = nn.Linear(32, act_dim)
-        self.log_std = nn.Parameter(torch.zeros(act_dim))
+        # Initialize log_std to -2.0 (std ~ 0.13) to avoid wild initial controls
+        self.log_std = nn.Parameter(torch.ones(act_dim) * -2.0)
+        self._init_weights()
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -57,6 +59,11 @@ class PolicyNetwork(nn.Module):
         mean = self.mean_layer(x)
         std = torch.exp(self.log_std)
         return mean, std
+
+    def _init_weights(self):
+        # Initialize mean layer with small weights for "cold start" (near 0 controls)
+        self.mean_layer.weight.data.mul_(0.01)
+        self.mean_layer.bias.data.mul_(0.01)
 
 class ValueNetwork(nn.Module):
     def __init__(self, obs_dim):
