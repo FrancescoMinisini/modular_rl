@@ -22,3 +22,4 @@ logs/
 ghostdriver.log
 
 htmlcov
+plots
