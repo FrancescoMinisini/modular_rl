@@ -233,6 +233,8 @@ class TRPOAgent:
             val_loss = nn.MSELoss()(values_pred, returns)
             self.optimizer_val.zero_grad()
             val_loss.backward()
+            self.optimizer_val.step()
+        
         return trpo_success, old_loss
         
     def state_dict(self):
