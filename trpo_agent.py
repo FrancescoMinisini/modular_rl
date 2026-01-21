@@ -53,6 +53,7 @@ class PolicyNetwork(nn.Module):
         self._init_weights()
 
     def forward(self, x):
+        x = torch.as_tensor(x, dtype=torch.float32)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = torch.relu(self.fc3(x))
@@ -95,8 +96,11 @@ class TRPOAgent:
         with torch.no_grad():
             mean, std = self.policy(obs_t)
         dist = torch.distributions.Normal(mean, std)
-        action = dist.sample()
-        return action.cpu().numpy()[0]
+        raw_action = dist.sample()
+        # Squash to [-1, 1]
+        action = torch.tanh(raw_action)
+        
+        return action.cpu().numpy()[0], raw_action.cpu().numpy()[0]
 
     def compute_returns_advantages(self, rewards, values, masks):
         # Generalized Advantage Estimation
@@ -131,6 +135,7 @@ class TRPOAgent:
         # Prepare batch
         obs_batch = torch.FloatTensor(np.array([r['obs'] for r in rollouts])).to(self.device)
         act_batch = torch.FloatTensor(np.array([r['act'] for r in rollouts])).to(self.device)
+        raw_act_batch = torch.FloatTensor(np.array([r['raw_act'] for r in rollouts])).to(self.device)
         rew_batch = torch.FloatTensor(np.array([r['rew'] for r in rollouts])).to(self.device)
         mask_batch = torch.FloatTensor(np.array([r['mask'] for r in rollouts])).to(self.device)
         
@@ -148,7 +153,15 @@ class TRPOAgent:
         with torch.no_grad():
             old_mean, old_std = self.policy(obs_batch)
             old_dist = torch.distributions.Normal(old_mean, old_std)
-            old_log_probs = old_dist.log_prob(act_batch).sum(dim=1)
+            # Log prob of RAW action under OLD Gaussian
+            # plus Jacobian correction?
+            # Actually, ratio = P_new(a)/P_old(a).
+            # P(a) = P(raw) / |det J|.
+            # Ratio = (P_new(raw)/J_new) / (P_old(raw)/J_old)
+            # Note raw acts are fixed from rollout. So J_new(raw) == J_old(raw) == J(raw).
+            # The Jacobian term CANCELS OUT in the ratio!
+            # So we only need log_prob of raw actions under the Gaussian distributions.
+            old_log_probs = old_dist.log_prob(raw_act_batch).sum(dim=1)
 
         def get_loss(volatile=False):
             if volatile:
@@ -158,7 +171,8 @@ class TRPOAgent:
                 mean, std = self.policy(obs_batch)
             
             dist = torch.distributions.Normal(mean, std)
-            log_probs = dist.log_prob(act_batch).sum(dim=1)
+            # Use raw_act_batch to compute Gaussian log_prob
+            log_probs = dist.log_prob(raw_act_batch).sum(dim=1)
             ratio = torch.exp(log_probs - old_log_probs)
             surr = (ratio * advantages).mean()
             return -surr # Minimize negative expected reward
@@ -175,6 +189,7 @@ class TRPOAgent:
             # old_dist is detach().
             new_dist = torch.distributions.Normal(mean, std)
             old_dist_d = torch.distributions.Normal(old_mean.detach(), old_std.detach())
+            # analytical KL for diagonal Gaussians (invariant to Tanh transform)
             kl = torch.distributions.kl.kl_divergence(old_dist_d, new_dist).sum(dim=1).mean()
             return kl
 
@@ -227,8 +242,8 @@ class TRPOAgent:
             set_params(self.policy.parameters(), old_params)
 
         # Value Function Update
-        # Simple MSE Regression
-        for _ in range(10):
+        # Increase epochs for stability
+        for _ in range(25):
             values_pred = self.value_net(obs_batch).squeeze()
             val_loss = nn.MSELoss()(values_pred, returns)
             self.optimizer_val.zero_grad()

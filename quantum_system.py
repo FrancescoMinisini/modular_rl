@@ -111,25 +111,32 @@ class QuantumSystem:
         H = H_drift + H_det + H_c + H_d1 + H_d2
         return H
 
-    def get_h_off_diag_norm(self, controls):
+    def get_h_off_diag(self, controls):
         """
-        Calculates ||H_OD|| where H_OD contains terms coupling Comp <-> Leakage.
-        Used for TSWT Bound.
+        Returns the off-diagonal block H_OD (Comp <-> Leakage).
+        Used for TSWT Bound (Eq 3). 
+        Returns the raw coupling block (1st order TSWT approx).
         """
         H = self.get_hamiltonian(controls)
         H_np = H.full()
         
-        # Extract off-diagonal blocks
-        # Block 1: Rows in Comp, Cols in Leak
-        block_cl = H_np[np.ix_(self.comp_indices, self.leak_indices)]
+        # We need the full off-diagonal part to compute derivatives of the operator
+        # H_od = P H Q + Q H P  (P=Comp, Q=Leak)
         
-        # Block 2: Rows in Leak, Cols in Comp (Hermitian conjugate usually)
+        # Extract blocks
+        # P H Q
+        block_cl = H_np[np.ix_(self.comp_indices, self.leak_indices)]
+        # Q H P
         block_lc = H_np[np.ix_(self.leak_indices, self.comp_indices)]
         
-        # Frobenius Norm of these blocks
-        # Norm^2 = sum(|elements|^2)
-        norm_sq = np.sum(np.abs(block_cl)**2) + np.sum(np.abs(block_lc)**2)
-        return np.sqrt(norm_sq)
+        # We can represent H_od as a matrix of same dim as H, or just return the blocks.
+        # For norm calculation of ||H_od||, ||H_od||^2 = ||Block_CL||^2 + ||Block_LC||^2
+        # We will return the blocks as a list or a composite object to handle derivatives.
+        # Simplest: Return the full H matrix with diagonal blocks zeroed?
+        # No, simpler to return just block_cl, as block_lc is its dagger (Hermitian).
+        # ||H_od||^2 = 2 * ||block_cl||^2 (Frobenius).
+        # So we just track block_cl.
+        return block_cl
 
     def evolve_step(self, U, controls):
         H = self.get_hamiltonian(controls)
