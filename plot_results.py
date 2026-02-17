@@ -42,6 +42,14 @@ def plot_training_curves(log_files, output_dir):
             # Moving average
             df['Avg_Fidelity_Smooth'] = df['avg_fidelity'].rolling(window=10).mean()
             df['Avg_Reward_Smooth'] = df['avg_reward'].rolling(window=10).mean()
+            # New components
+            if 'avg_leakage' in df.columns:
+                df['Avg_Leak_Smooth'] = df['avg_leakage'].rolling(window=10).mean()
+            if 'avg_bound' in df.columns:
+                df['Avg_Bound_Smooth'] = df['avg_bound'].rolling(window=10).mean()
+            if 'avg_time_cost' in df.columns:
+                df['Avg_TimeC_Smooth'] = df['avg_time_cost'].rolling(window=10).mean()
+                
             data.append(df)
         except Exception as e:
             print(f"Skipping {log_file}: {e}")
@@ -101,6 +109,39 @@ def plot_training_curves(log_files, output_dir):
     plt.close()
     
     print(f"Plots saved to {output_dir}")
+    
+    # Plot 4: Cost Decomposition
+    # Plot Leakage, Boundary, Time for the last condition (or all? Too messy)
+    # Let's plot Leakage separate
+    plt.figure()
+    for cond in conditions:
+        subset = full_df[full_df['Condition'] == cond]
+        if 'Avg_Leak_Smooth' in subset.columns:
+            plt.plot(subset['iter'], subset['Avg_Leak_Smooth'], label=cond)
+            
+    plt.title('Average Leakage Cost (Eq 3 proxy)')
+    plt.xlabel('Iteration')
+    plt.ylabel('Leakage Cost')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "leakage_curve.png"))
+    plt.close()
+
+    # Plot 5: Boundary Cost
+    plt.figure()
+    for cond in conditions:
+        subset = full_df[full_df['Condition'] == cond]
+        if 'Avg_Bound_Smooth' in subset.columns:
+            plt.plot(subset['iter'], subset['Avg_Bound_Smooth'], label=cond)
+            
+    plt.title('Average Boundary Cost (Power)')
+    plt.xlabel('Iteration')
+    plt.ylabel('Boundary Cost')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "boundary_curve.png"))
+    plt.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
