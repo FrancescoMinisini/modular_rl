@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=str, default="CZ")
     parser.add_argument("--n_iter", type=int, default=100) # Iters per Alpha
-    parser.add_argument("--timesteps_per_batch", type=int, default=20000) # Now EPISODES per batch 
+    parser.add_argument("--timesteps_per_batch", type=int, default=100) # Now EPISODES per batch 
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--dt", type=float, default=1.0)

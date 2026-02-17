@@ -99,13 +99,13 @@ class QuantumSystem:
         if F1 != 0:
             exp_phi1 = np.exp(1j * phi1)
             # i * F1 * (a1 * conj(exp) - a1dag * exp)
-            term = self.a1 * np.conj(exp_phi1) - self.a1.dag() * exp_phi1
+            term = self.a1 * complex(np.conj(exp_phi1)) - self.a1.dag() * complex(exp_phi1)
             H_d1 = 1j * F1 * term
             
         H_d2 = 0
         if F2 != 0:
             exp_phi2 = np.exp(1j * phi2)
-            term = self.a2 * np.conj(exp_phi2) - self.a2.dag() * exp_phi2
+            term = self.a2 * complex(np.conj(exp_phi2)) - self.a2.dag() * complex(exp_phi2)
             H_d2 = 1j * F2 * term
             
         H = H_drift + H_det + H_c + H_d1 + H_d2

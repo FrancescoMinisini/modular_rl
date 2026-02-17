@@ -53,7 +53,7 @@ class PolicyNetwork(nn.Module):
         self._init_weights()
 
     def forward(self, x):
-        x = torch.as_tensor(x, dtype=torch.float32)
+        x = torch.as_tensor(x, dtype=torch.float32).to(self.mean_layer.weight.device) # Ensure type/device
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = torch.relu(self.fc3(x))
@@ -75,6 +75,7 @@ class ValueNetwork(nn.Module):
         self.val_layer = nn.Linear(32, 1)
 
     def forward(self, x):
+        x = torch.as_tensor(x, dtype=torch.float32)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = torch.relu(self.fc3(x))
