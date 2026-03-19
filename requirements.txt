@@ -1,7 +1,7 @@
-numpy<2.0.0
+numpy
 torch
 qutip
-gym
+gymnasium
 scipy
 pandas
 matplotlib

@@ -1,6 +1,6 @@
 import numpy as np
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 from quantum_system import QuantumSystem
 
 class ExactExponentialFilter:
