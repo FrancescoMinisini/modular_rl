@@ -20,7 +20,7 @@ The codebase is streamlined to focus on the core TRPO implementation for quantum
 To run this project, you need Python and the following dependencies:
 
 ```bash
-pip install numpy torch gym scipy matplotlib
+pip install -r requirements.txt
 ```
 
 ## Usage
